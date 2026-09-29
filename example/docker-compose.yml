@@ -1,0 +1,93 @@
+# logx/example/docker-compose.yml
+# 调用链（OTel Tracing）开发环境
+# 服务：
+#   - jaeger:     全链路追踪（UI: http://localhost:26686，OTLP: 24317/24318，Thrift: 24268）
+#   - zookeeper:  Kafka 依赖（32181）
+#   - kafka:      MQ 异步推送（内部 9092，外部 39092→9093）
+
+name: hubx-logx-example
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ===== Jaeger（调用链追踪）=====
+  jaeger:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/jaegertracing/all-in-one:1.63.0
+    cpus: "0.5"
+    container_name: hubx-logx-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "26686:16686"   # Jaeger UI
+      - "24268:14268"   # Jaeger HTTP Thrift Collector（logx jaeger exporter 端点）
+      - "24250:14250"   # Jaeger gRPC Collector
+      - "26831:6831/udp" # Jaeger Agent UDP
+      - "24317:4317"     # OTLP gRPC
+      - "24318:4318"     # OTLP HTTP
+    mem_limit: 512m
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:16686/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ===== Kafka + Zookeeper（MQ 异步推送）=====
+  zookeeper:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/zookeeper:3.9.2
+    cpus: "0.5"
+    container_name: hubx-logx-zookeeper
+    ports:
+      - "32181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc localhost 2181 | grep -q 'Zookeeper version'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+    restart: unless-stopped
+    logging: *default-logging
+
+  kafka:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/wurstmeister/kafka:2.13-2.8.1
+    cpus: "0.5"
+    container_name: hubx-logx-kafka
+    ports:
+      - "39092:9093"    # 外部访问：宿主机 39092 → 容器 9093
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # 双 listener：内部 broker-to-broker + 外部宿主机访问
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://127.0.0.1:39092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - ./data/kafka/data:/var/lib/kafka/data
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    mem_limit: 1g
+    restart: unless-stopped
+    logging: *default-logging
+
+networks:
+  default:
+    name: hubx-logx-net
+    driver: bridge

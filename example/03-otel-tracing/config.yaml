@@ -1,0 +1,22 @@
+# logx/example/03-otel-tracing/config.yaml
+# 用例 03 的 yaml 配置（logx: 段，字段对应 logx.Config 的 mapstructure 标签）
+#
+# 使用方式：
+#   HUBX_CONFIG=$PWD/config.yaml go run .
+# 不带 HUBX_CONFIG 时程序走"程序内构造 cfg"路径，本文件不参与。
+
+logx:
+  level: debug
+  format: console
+  output: stdout
+  service_name: logx-demo-otel
+  service_version: 1.0.0
+  environment: development
+  otel:
+    enabled: true
+    exporter: jaeger
+    jaeger:
+      endpoint: "http://localhost:24268/api/traces"
+    sampler:
+      type: parentbased_traceidratio
+      ratio: 1.0

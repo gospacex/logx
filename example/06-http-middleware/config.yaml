@@ -1,0 +1,21 @@
+# logx/example/06-http-middleware/config.yaml
+# 用例 06 的 yaml 配置（logx: 段，字段对应 logx.Config 的 mapstructure 标签）
+#
+# 使用方式：
+#   HUBX_CONFIG=$PWD/config.yaml go run .
+# 不带 HUBX_CONFIG 时 main.go 走"程序内构造 cfg"默认路径，本文件作为备选展示。
+#
+# 前置条件（调用链验证需要）：
+#   cd logx/example && docker compose up -d
+#   Jaeger UI http://localhost:26686 / Thrift collector http://localhost:24268/api/traces
+
+logx:
+  service_name: logx-demo-http
+  level: debug
+  format: console
+  output: stdout
+  otel:
+    enabled: true
+    exporter: jaeger
+    jaeger:
+      endpoint: "http://localhost:24268/api/traces"
